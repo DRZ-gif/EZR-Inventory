@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QR Transaction</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    body{margin:0;background:#f4f6f8;color:#0b1320;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:20px;}
+    .card{background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(11,19,32,0.12);max-width:860px;width:100%;padding:20px;box-sizing:border-box;}
+    h1{margin:0 0 8px;font-size:20px;}
+    p.lead{margin:0 0 18px;color:#394150;}
+    .txn-box{background:#fbfdff;border:1px solid #e6eef8;padding:14px;border-radius:8px;margin:12px 0;font-family:monospace;white-space:pre-wrap;word-break:break-word;}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+    button{padding:10px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:600;}
+    .btn-withdraw{background:#0b83ff;color:#fff;}
+    .btn-cancel{background:#f2f4f7;color:#0b1320;border:1px solid #d9e2ef;}
+    .small{font-size:13px;color:#536070;margin-top:8px;}
+    .stored{margin-top:18px;border-top:1px dashed #e6eef8;padding-top:14px;}
+    .tx-list{max-height:200px;overflow:auto;margin-top:12px;}
+    .tx-item{padding:8px;border-radius:8px;border:1px solid #eef6ff;margin-bottom:8px;background:#fff;}
+    .tx-meta{font-size:12px;color:#425066;margin-top:6px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .actions{display:flex;gap:8px;margin-left:auto;}
+    .btn-plain{background:transparent;border:1px solid #e6eef8;padding:6px 8px;border-radius:8px;cursor:pointer;}
+    .tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+    input[type="text"]{padding:8px;border-radius:8px;border:1px solid #dfe9f6;width:100%;}
+    .flex-row{display:flex;gap:10px;align-items:center;}
+    .muted{color:#7b8794;font-size:13px;}
+    footer{margin-top:12px;font-size:12px;color:#7b8794;}
+    @media (min-width:700px){ .top-row{display:flex;gap:20px;align-items:flex-start;} .left{flex:1} .right{width:330px} }
+  </style>
+</head>
+<body>
+  <div class="card" role="main" aria-labelledby="title">
+    <div class="top-row">
+      <div class="left">
+        <h1 id="title">QR Transaction</h1>
+        <p class="lead">Detected transaction text from QR. Choose whether to withdraw (store) or cancel.</p>
+
+        <label class="muted">Transaction text (from QR):</label>
+        <div id="txnText" class="txn-box">— waiting for QR data —</div>
+
+        <div class="controls">
+          <button id="withdrawBtn" class="btn-withdraw">Withdraw</button>
+          <button id="cancelBtn" class="btn-cancel">Cancel</button>
+          <div class="small" id="statusMsg"></div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <label class="muted">If QR didn't populate text, paste it here:</label>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <input id="manualInput" type="text" placeholder="Paste transaction text or ID..." />
+            <button id="useInput" class="btn-plain">Use</button>
+          </div>
+        </div>
+
+        <div class="stored">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <strong>Stored transactions</strong>
+              <div class="small">Persisted in your browser (localStorage).</div>
+            </div>
+            <div class="tools">
+              <button id="exportBtn" class="btn-plain">Export JSON</button>
+              <button id="clearBtn" class="btn-plain">Clear All</button>
+            </div>
+          </div>
+
+          <div id="txList" class="tx-list" aria-live="polite" style="margin-top:12px;">
+            <!-- list populated by JS -->
+          </div>
+        </div>
+
+        <footer>
+          Tip: To create a QR that opens this page with data, encode a URL like: <code>https://example.com/qr-transaction.html?data=Your%20text%20here</code>
+        </footer>
+      </div>
+
+      <div class="right" aria-hidden="false" style="margin-top:6px;">
+        <strong>Activity</strong>
+        <div id="log" class="small" style="margin-top:8px;min-height:60px;">No activity yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Utilities
+    function logActivity(msg){
+      const log = document.getElementById('log');
+      const ts = new Date().toLocaleString();
+      log.textContent = ts + " — " + msg + "\\n" + log.textContent;
+    }
+
+    function readTransactionFromURL(){
+      // support ?data=..., ?text=..., ?t=..., or fragment #...
+      const params = new URLSearchParams(window.location.search);
+      let t = params.get('data') || params.get('text') || params.get('t') || null;
+      if (!t && window.location.hash){
+        // remove leading '#' and decode
+        t = decodeURIComponent(window.location.hash.slice(1));
+      }
+      return t;
+    }
+
+    function showTransactionText(text){
+      const el = document.getElementById('txnText');
+      el.textContent = text || "— no transaction text found —";
+    }
+
+    function getStored(){
+      try {
+        const raw = localStorage.getItem('qr_transactions_v1');
+        return raw ? JSON.parse(raw) : [];
+      } catch(e){
+        console.error(e);
+        return [];
+      }
+    }
+    function saveStored(arr){
+      localStorage.setItem('qr_transactions_v1', JSON.stringify(arr));
+    }
+
+    function renderStored(){
+      const list = document.getElementById('txList');
+      const arr = getStored();
+      list.innerHTML = '';
+      if (arr.length === 0){
+        list.innerHTML = '<div class="muted">No transactions stored yet.</div>';
+        return;
+      }
+      arr.slice().reverse().forEach(tx => {
+        const div = document.createElement('div');
+        div.className = 'tx-item';
+        div.innerHTML = '<div><strong>' + escapeHtml(tx.text) + '</strong></div>' +
+          '<div class="tx-meta">' +
+            ('<div>Saved: ' + new Date(tx.savedAt).toLocaleString() + '</div>') +
+            ('<div style="text-align:right;">ID: <span class="muted">' + tx.id + '</span></div>') +
+          '</div>';
+        const btns = document.createElement('div');
+        btns.className = 'actions';
+        const view = document.createElement('button');
+        view.className = 'btn-plain';
+        view.textContent = 'Details';
+        view.onclick = () => {
+          alert('ID: ' + tx.id + '\\nSaved: ' + new Date(tx.savedAt).toLocaleString() + '\\n\\nText:\\n' + tx.text);
+        };
+        const remove = document.createElement('button');
+        remove.className = 'btn-plain';
+        remove.textContent = 'Delete';
+        remove.onclick = () => {
+          if (!confirm('Delete this stored transaction?')) return;
+          const remaining = getStored().filter(x => x.id !== tx.id);
+          saveStored(remaining);
+          renderStored();
+          logActivity('Deleted transaction ' + tx.id);
+        };
+        btns.appendChild(view);
+        btns.appendChild(remove);
+        div.appendChild(btns);
+        list.appendChild(div);
+      });
+    }
+
+    // simple escape for text display
+    function escapeHtml(s){
+      if (!s) return '';
+      return s.replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]);});
+    }
+
+    function storeTransaction(text){
+      const arr = getStored();
+      const entry = {
+        id: 'tx_' + Date.now() + '_' + Math.floor(Math.random()*9000+1000),
+        text: String(text),
+        savedAt: new Date().toISOString()
+      };
+      arr.push(entry);
+      saveStored(arr);
+      renderStored();
+      logActivity('Saved transaction ' + entry.id);
+      return entry;
+    }
+
+    // Wire up UI
+    document.addEventListener('DOMContentLoaded', () => {
+      const withdrawBtn = document.getElementById('withdrawBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      const manualInput = document.getElementById('manualInput');
+      const useInput = document.getElementById('useInput');
+      const statusMsg = document.getElementById('statusMsg');
+      const exportBtn = document.getElementById('exportBtn');
+      const clearBtn = document.getElementById('clearBtn');
+
+      let currentText = readTransactionFromURL();
+      showTransactionText(currentText);
+
+      if (currentText) {
+        statusMsg.textContent = 'Ready.';
+        logActivity('Loaded transaction text from URL.');
+      } else {
+        statusMsg.textContent = 'No QR data found.';
+        logActivity('No QR data in URL.');
+      }
+
+      withdrawBtn.addEventListener('click', () => {
+        if (!currentText || currentText.trim() === ''){
+          alert('No transaction text to withdraw. Paste or provide text first.');
+          return;
+        }
+        const saved = storeTransaction(currentText);
+        statusMsg.textContent = 'Transaction withdrawn and saved (ID: ' + saved.id + ').';
+        showTransactionText('— no transaction text found —');
+        currentText = '';
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        if (confirm('Cancel this transaction?')) {
+          statusMsg.textContent = 'Transaction canceled.';
+          logActivity('User canceled transaction.');
+          showTransactionText('— no transaction text found —');
+          currentText = '';
+        }
+      });
+
+      useInput.addEventListener('click', () => {
+        const v = manualInput.value.trim();
+        if (!v) { alert('Enter some text first.'); return; }
+        currentText = v;
+        showTransactionText(currentText);
+        statusMsg.textContent = 'Text loaded from input.';
+        logActivity('Loaded transaction text from manual input.');
+      });
+
+      exportBtn.addEventListener('click', () => {
+        const arr = getStored();
+        const blob = new Blob([JSON.stringify(arr, null, 2)], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'transactions.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        logActivity('Exported transactions JSON (' + arr.length + ' items).');
+      });
+
+      clearBtn.addEventListener('click', () => {
+        if (!confirm('Clear ALL stored transactions? This cannot be undone.')) return;
+        localStorage.removeItem('qr_transactions_v1');
+        renderStored();
+        logActivity('Cleared all stored transactions.');
+      });
+
+      // Show list initially
+      renderStored();
+
+      // If the page is visited with no search but with fragment, automatically show text:
+      // already handled in readTransactionFromURL.
+
+      // Accessibility: allow pressing Enter in manualInput to 'Use'
+      manualInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); useInput.click(); }
+      });
+    });
+  </script>
+</body>
+</html>
