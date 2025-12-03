@@ -22,3 +22,9 @@ export function saveTransaction(status, dataText) {
             closePage();
         });
 }
+function closePage() {
+    window.close(); // Works when opened by QR apps or external apps
+
+    // Fallback: hide UI so the page effectively "closes"
+    document.body.innerHTML = "<h2>Done. You may close this page.</h2>";
+}
