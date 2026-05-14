@@ -1,7 +1,7 @@
 function logActivity(msg){const log=document.getElementById('log');const ts=new Date().toLocaleString();log.textContent=ts+" — "+msg+"\n"+log.textContent;}function readTransactionFromURL(){const params=new URLSearchParams(window.location.search);let t=params.get('data')||params.get('text')||params.get('t')||null;if(!t&&window.location.hash){t=decodeURIComponent(window.location.hash.slice(1));}return t;}function showTransactionText(text){document.getElementById('txnText').textContent=text||"— no transaction text found —";}function getStored(){try{return JSON.parse(localStorage.getItem('qr_transactions_v1'))||[];}catch{return[];}}function saveStored(arr){localStorage.setItem('qr_transactions_v1',JSON.stringify(arr));}function renderStored(){const list=document.getElementById('txList');const arr=getStored();list.innerHTML="";if(!arr.length){list.innerHTML=`<div class="muted">No transactions stored.</div>`;return;}arr.slice().reverse().forEach(tx=>{const div=document.createElement("div");div.className="tx-item";div.innerHTML=`<div><strong>${tx.text}</strong></div><div class="small">Saved: ${new Date(tx.savedAt).toLocaleString()}</div><div class="small">ID: ${tx.id}</div>`;list.appendChild(div);});}function storeTransaction(text){const arr=getStored();const entry={id:"tx_"+Date.now()+"_"+Math.floor(Math.random()*9000+1000),text,savedAt:new Date().toISOString()};arr.push(entry);saveStored(arr);renderStored();logActivity("Stored transaction "+entry.id);}
 // 1. Set target coordinates (Example: Billerica, MA)
-const TARGET_LAT = 42.5584; 
-const TARGET_LON = -71.2689;
+const TARGET_LAT = 42.593492; 
+const TARGET_LON = --71.150348;
 const RADIUS_KM = 1.0; // 1 kilometer allowance
 
 function getDistance(lat1, lon1, lat2, lon2) {
